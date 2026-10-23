@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pit Wall · Barcelona-Catalunya 2026</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="flag" aria-hidden="true"></div>
+    <div>
+      <h1>Pit Wall</h1>
+      <p id="subtitle">Loading race model…</p>
+    </div>
+  </div>
+  <dl class="readouts" id="readouts"></dl>
+</header>
+
+<section id="controls" aria-label="Case setup"></section>
+
+<nav class="tabs" role="tablist" aria-label="Sections">
+  <button role="tab" aria-selected="true" data-tab="strategy">Strategies</button>
+  <button role="tab" aria-selected="false" data-tab="forecast">Forecast &amp; risk</button>
+  <button role="tab" aria-selected="false" data-tab="replay">Race replay</button>
+  <button role="tab" aria-selected="false" data-tab="track">Track</button>
+  <button role="tab" aria-selected="false" data-tab="tyres">Tyres &amp; fuel</button>
+  <button role="tab" aria-selected="false" data-tab="risk">Risk</button>
+  <button role="tab" aria-selected="false" data-tab="model">Model</button>
+</nav>
+
+<main>
+  <section id="tab-strategy" class="panel" role="tabpanel"></section>
+  <section id="tab-forecast" class="panel" role="tabpanel" hidden></section>
+  <section id="tab-replay" class="panel" role="tabpanel" hidden></section>
+  <section id="tab-track" class="panel" role="tabpanel" hidden></section>
+  <section id="tab-tyres" class="panel" role="tabpanel" hidden></section>
+  <section id="tab-risk" class="panel" role="tabpanel" hidden></section>
+  <section id="tab-model" class="panel" role="tabpanel" hidden></section>
+</main>
+<div id="tip" class="tip" hidden></div>
+<footer class="foot" id="foot"></footer>
+<script src="app.js"></script>
+</body>
+</html>
