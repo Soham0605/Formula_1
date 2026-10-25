@@ -24,6 +24,28 @@ Live site: https://soham0605.github.io/Formula_1/ (static, GitHub Pages; the sim
 
 Weather is fetched live from Open-Meteo in the browser (the bundled snapshot is the fallback).
 
+### Live timing sync (every N laps)
+The console's **Live timing** strip rebuilds the real field at the end of any lap from OpenF1 (order and gaps
+from line-crossing times, every car's tyre, age and stops, SC/VSC/red status, retirements) and runs the
+strategy search from there. **Auto** does this every 5 / 10 / 15 laps.
+
+OpenF1 is free after a session ends. **While a session is live it refuses every unauthenticated request,
+including the browser's CORS preflight**, so the static GitHub Pages site cannot read it during a race. For live
+use, run the console through the relay in `serve.py` with a paid OpenF1 account (credentials stay on your machine):
+
+```bash
+export OPENF1_USERNAME=you@example.com OPENF1_PASSWORD='...'
+python serve.py --local --port 8050      # open http://localhost:8050, select the race, press Auto
+```
+The authenticated relay path is written to OpenF1's documented token flow but has not been tested against a
+paid account.
+
+### Call sheet
+Each "Find best 3 calls" opens a call sheet: the three calls as tabs, the track map with attack / traction /
+front-load zones (derived from the pole-lap speed trace and Pirelli's COTA notes; guidance, not simulated),
+tyre usage for the rest of the race, and a push / balanced / manage level per stint (share of the tyre's usable
+life the stint uses).
+
 ### Data sources
 Jolpica-F1 (Ergast API): schedule, qualifying, results · OpenF1: session times, team colours, race control,
 pole-lap position and speed · MultiViewer circuit API: outline, corners, pit loss · Open-Meteo: forecast ·
@@ -53,6 +75,7 @@ scripts, commit `dashboard/data/`, push. GitHub Pages redeploys on every push to
 ```bash
 pip install playwright && python -m playwright install chromium
 python tests/run_browser.py tests/engine_test.html          # engine: determinism, probabilities, search timing
+python tests/run_browser.py tests/live_test.html            # live sync on an OpenF1-shaped fixture
 python tests/run_browser.py dashboard/index.html --script tests/ui_flow.py   # full UI flow with screenshots
 ```
 
@@ -71,3 +94,4 @@ python run_analysis.py --workers 4          # writes dashboard/barcelona/data/re
 Grid = qualifying order (penalties not verified). Not modelled: lapped traffic, penalties, damage, rain
 transitions, tyre-set availability, team orders, per-car energy state. Rival pace is 0.85 × qualifying gap.
 Not affiliated with Formula 1, the FIA or Red Bull Racing; no official logos are used.
+Driver photos: Steffen Prößdorf (Verstappen) and Yu Chu Chin (Hadjar), Wikimedia Commons, CC BY-SA 4.0.

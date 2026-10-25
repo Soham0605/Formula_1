@@ -5,9 +5,20 @@ import { buildConfig, buildField, finishProbs, driverFeatures, loadWeather, weat
 import { fieldArchetypes, COMP, OBJECTIVES, GREEN, VSC, SC, RED } from "./engine.js";
 import { search } from "./strategy.js";
 import { startBackground } from "./bg.js";
+import { fieldAtLap, currentLap, getToken, setToken } from "./live.js";
+import { trackZones, zoneMap, stintsOf, usageBar, levelGauge, ZONE } from "./callsheet.js";
+
+/* Driver photos: Wikimedia Commons, CC BY-SA 4.0 (credited in the footer and on hover). */
+const PHOTOS = {
+  max_verstappen: { src: "img/drivers/max_verstappen.jpg", pos: "50% 18%", credit: "Steffen Prößdorf", lic: "CC BY-SA 4.0",
+    url: "https://commons.wikimedia.org/wiki/File:2024-08-25_Motorsport,_Formel_1,_Gro%C3%9Fer_Preis_der_Niederlande_2024_STP_3973_by_Stepro_(medium_crop).jpg" },
+  hadjar: { src: "img/drivers/hadjar.jpg", pos: "50% 30%", credit: "Yu Chu Chin", lic: "CC BY-SA 4.0",
+    url: "https://commons.wikimedia.org/wiki/File:Isack_Hadjar_at_the_Melbourne_Walk_during_the_2026_Australian_Grand_Prix_(028A8753)_(cropped).jpg" },
+};
 
 const S = { cal: null, ev: null, model: null, wx: null, driver: null, objective: "points", cfg: null, arch: null, field: null,
-  pre: {}, live: null, history: [], gsap: null, lenis: null, bg: null, stops: [] };
+  pre: {}, live: null, history: [], gsap: null, lenis: null, bg: null, stops: [], raceClicks: [],
+  sync: { field: null, auto: false, every: 10, timer: null, next: 0, busy: false }, sheet: null };
 const STATUS_NAME = ["GREEN", "VSC", "SC", "RED"];
 const TZ_USER = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -48,7 +59,22 @@ async function loadMotionLibs() {
     if (S.gsap) S.lenis.on("scroll", () => S.gsap.ScrollTrigger?.update?.());
   } catch (e) { /* native scrolling */ }
 }
-function scrollToEl(el) { if (S.lenis) S.lenis.scrollTo(el, { offset: -70, duration: 1.2 }); else el.scrollIntoView({ behavior: "smooth", block: "start" }); }
+/* Smooth scroll to a section. Lenis measures the page once, so it must re-measure after sections are revealed,
+   otherwise it stops short (this left the cards below the fold when the browser was zoomed in). */
+function scrollToEl(el) {
+  if (S.lenis) { S.lenis.resize(); requestAnimationFrame(() => S.lenis.scrollTo(el, { offset: -70, duration: 1.1, force: true })); }
+  else el.scrollIntoView({ behavior: "smooth", block: "start" });
+  setTimeout(() => {
+    const r = el.getBoundingClientRect();
+    if (r.top > innerHeight * .5) { if (S.lenis) S.lenis.scrollTo(scrollY + r.top - 70, { immediate: true, force: true }); else scrollTo(0, scrollY + r.top - 70); }
+  }, 1400);
+}
+function toast(html, ms = 6000) {
+  let t = $("#toast");
+  if (!t) { t = h("div", { id: "toast", class: "toast glass", role: "status" }); document.body.append(t); }
+  t.innerHTML = html; t.classList.add("on");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), ms);
+}
 function reveal(els) {
   els = [els].flat().filter(Boolean);
   if (S.gsap) S.gsap.fromTo(els, { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: .8, stagger: .07, ease: "expo.out" });
@@ -92,6 +118,12 @@ function buildPicker() {
 
 /* ------------------------------------------------------------ race selected */
 async function selectRace(r) {
+  const now = Date.now();
+  S.raceClicks = [...S.raceClicks.filter(t => now - t < 30000), now];
+  if (S.raceClicks.length >= 3) {
+    toast(`<b>The race weekend is just below.</b> Scroll down ↓, or zoom out (<kbd>${/Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}</kbd> + <kbd>−</kbd>) if the page looks cramped.`, 9000);
+    if (S.ev && S.ev.meta.round === r.round) { scrollToEl($("#sec-event")); return; }
+  }
   $("#picker-flag").innerHTML = flag(r.country); $("#picker-label").textContent = r.name;
   showLoader("Loading race weekend");
   setProgress(.15, "Event data");
@@ -241,7 +273,7 @@ function renderDrivers() {
     const g = ev.grid.find(x => x.driver_id === id);
     const info = { max_verstappen: { no: 3, first: "Max", last: "Verstappen" }, hadjar: { no: 6, first: "Isack", last: "Hadjar" } }[id];
     const d = h("button", { class: "glass drv", "aria-pressed": "false", "data-id": id, html:
-      `<span class="stripe"></span><span class="no">${g?.number ?? info.no}</span>
+      `<span class="stripe"></span><span class="face-wrap"><span class="no">${g?.number ?? info.no}</span>${PHOTOS[id] ? `<img class="face" src="${PHOTOS[id].src}" alt="${info.first} ${info.last}" style="object-position:${PHOTOS[id].pos}" title="Photo: ${PHOTOS[id].credit}, ${PHOTOS[id].lic}" loading="lazy" onerror="this.remove()">` : ""}</span>
        <span class="nm">${info.first}<br>${info.last.toUpperCase()}<small>Red Bull Racing · ${g?.code ?? ""}</small></span>
        <span class="qpos">${g ? `<b>P${g.pos}</b><small>${g.best_s ? fmtLap(g.best_s) : ""}${g.gap_s ? ` · +${g.gap_s.toFixed(3)}` : " · POLE"}</small>` : `<b class="dim" style="font-size:18px">Quali<br>pending</b>`}</span>` });
     if (g) d.addEventListener("click", () => selectDriver(id));
@@ -307,7 +339,7 @@ function stats(d) {
 function renderPrediction(res) {
   const host = $("#pred"), D = blendDist(res), g = S.ev.grid.find(x => x.driver_id === S.driver);
   const seasonRows = S.ev.season[S.driver] || [];
-  $("#pred-aside").textContent = `Starts P${g.pos} · ${S.ev.meta.laps} laps · ${(res.races / 1000).toFixed(0)}k simulated races`;
+  $("#pred-aside").innerHTML = `${PHOTOS[S.driver] ? `<img class="avatar" src="${PHOTOS[S.driver].src}" alt="" style="object-position:${PHOTOS[S.driver].pos}">` : ""}${g.name} · starts P${g.pos} · ${(res.races / 1000).toFixed(0)}k simulated races`;
   host.innerHTML = "";
   const gauge = h("div", { class: "glass gauge-card" });
   const draw = which => {
@@ -396,7 +428,16 @@ function renderStrategies(res) {
 function renderConsole() {
   const L = S.live, host = $("#console"), laps = S.cfg.laps;
   const g = S.ev.grid;
+  const sy = S.sync;
   host.innerHTML = `
+  <div class="sync">
+    <span class="sync-dot ${sy.auto ? "on" : ""}" id="sync-dot"></span>
+    <div class="sync-t"><b>Live timing</b><small id="sync-msg">${sy.field ? `Field synced at lap ${sy.field.lap}` : "OpenF1 · pull the real field at any lap"}</small></div>
+    <button class="btn-ghost" id="sync-pull">Pull lap <span class="num" id="sync-lap">${L.lap || 1}</span></button>
+    <div class="seg" id="sync-every" role="group" aria-label="Auto interval">${[5, 10, 15].map(n => `<button aria-pressed="${n === sy.every}" data-n="${n}">${n} laps</button>`).join("")}</div>
+    <button class="btn-ghost ${sy.auto ? "active" : ""}" id="sync-auto" aria-pressed="${sy.auto}">${sy.auto ? "Auto ON" : "Auto off"}</button>
+    <input type="password" id="sync-token" placeholder="OpenF1 token (live sessions)" value="${getToken() ? "••••••••" : ""}" autocomplete="off" aria-label="OpenF1 bearer token">
+  </div>
   <div class="ctl">
     <h4>Lap completed <kbd>← →</kbd></h4>
     <div class="stepper" id="lap-st"><button data-d="-1" aria-label="Previous lap">−</button><div class="val"><b class="num" id="lap-v"></b><small>of ${laps}</small></div><button data-d="1" aria-label="Next lap">+</button></div>
@@ -444,9 +485,52 @@ function renderConsole() {
     const v = +b.dataset.v, u = new Set(L.used); u.has(v) ? u.delete(v) : u.add(v); L.used = [...u]; syncConsole(); }));
   $$("#outs button", host).forEach(b => b.addEventListener("click", () => {
     L.out.has(b.dataset.code) ? L.out.delete(b.dataset.code) : L.out.add(b.dataset.code); L.pos = clamp(L.pos, 1, 22 - L.out.size); syncConsole(); }));
-  $("#run", host).addEventListener("click", runWhatIf);
+  $("#run", host).addEventListener("click", () => runWhatIf());
+  $("#sync-pull", host).addEventListener("click", () => pullLap(Math.max(L.lap, 1), false));
+  $$("#sync-every button", host).forEach(b => b.addEventListener("click", () => { S.sync.every = +b.dataset.n; S.sync.next = 0; renderConsole(); }));
+  $("#sync-auto", host).addEventListener("click", () => { S.sync.auto ? stopAuto() : startAuto(); renderConsole(); });
+  $("#sync-token", host).addEventListener("change", e => { const v = e.target.value; if (v && !v.startsWith("•")) { setToken(v); syncMsg("Token saved for this tab"); } else if (!v) setToken(""); });
   syncConsole();
 }
+
+/* ------------------------------------------------------------ live timing sync */
+const raceKey = () => S.ev.sessions.find(x => x.name === "Race")?.key;
+function syncMsg(t, bad) { const m = $("#sync-msg"); if (m) { m.textContent = t; m.classList.toggle("bad", !!bad); } }
+async function pullLap(lap, autoRun) {
+  if (S.sync.busy) return;
+  S.sync.busy = true; syncMsg(`Pulling lap ${lap}…`);
+  try {
+    const f = await fieldAtLap(raceKey(), lap, S.ev.grid);
+    const ours = f.cars[S.field.cars[0].code];
+    if (!ours || ours.out) throw new Error(`${S.field.cars[0].code} is out of the race at lap ${lap}.`);
+    const L = S.live;
+    L.lap = lap; L.pos = ours.pos; L.comp = ours.comp; L.age = ours.age; L.pits = ours.pits; L.used = ours.used.filter(c => c !== ours.comp);
+    L.status = f.status; L.statusLeft = f.statusLeft || 3;
+    L.out = new Set(Object.entries(f.cars).filter(([, c]) => c.out).map(([k]) => k));
+    const run = Object.values(f.cars).filter(c => !c.out).sort((a, b) => a.gap - b.gap), i = run.indexOf(ours);
+    L.gapAhead = i > 0 ? +(ours.gap - run[i - 1].gap).toFixed(1) : null;
+    L.gapBehind = i < run.length - 1 ? +(run[i + 1].gap - ours.gap).toFixed(1) : null;
+    S.sync.field = { lap, pos: ours.pos, cars: S.field.cars.map(c => f.cars[c.code] ? { ...f.cars[c.code], used: f.cars[c.code].used || [] } : { out: true }) };
+    renderConsole();
+    syncMsg(`Field synced at lap ${lap} · ${new Date().toLocaleTimeString("en-GB")}${f.warnings.length ? " · " + f.warnings.length + " warning(s)" : ""}`);
+    if (f.warnings.length) console.warn("live sync:", f.warnings);
+    if (autoRun) await runWhatIf({ auto: true });
+  } catch (e) { syncMsg(e.message, true); }
+  finally { S.sync.busy = false; }
+}
+function startAuto() {
+  S.sync.auto = true; S.sync.next = S.sync.next || S.sync.every;
+  const tick = async () => {
+    if (!S.sync.auto || S.sync.busy || $("#loader").classList.contains("on")) return;
+    try {
+      const lap = await currentLap(raceKey(), Math.max(S.sync.next - 2, 1));
+      if (lap >= S.sync.next) { const L = Math.floor(lap / S.sync.every) * S.sync.every; S.sync.next = L + S.sync.every; await pullLap(L, true); }
+      else syncMsg(`Auto: leader on lap ${lap + 1}, next call at lap ${S.sync.next}`);
+    } catch (e) { syncMsg(e.message, true); }
+  };
+  tick(); S.sync.timer = setInterval(tick, 20000);
+}
+function stopAuto() { S.sync.auto = false; clearInterval(S.sync.timer); }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 function setLap(v) {
   const L = S.live, prev = L.lap; L.lap = clamp(v, 0, S.cfg.laps - 1);
@@ -474,7 +558,7 @@ function syncConsole() {
   $("#console-note").textContent = warn.join(" ");
 }
 
-async function runWhatIf() {
+async function runWhatIf(opts = {}) {
   const L = S.live;
   if (!S.field) return;
   if (L.lap > 0 && L.pits === 0 && L.age !== L.lap) L.age = L.lap;   // no stop: the tyre is as old as the race
@@ -484,6 +568,8 @@ async function runWhatIf() {
     ? { lap: 0, status: L.status, statusLeft: L.status ? L.statusLeft : 0, startComp: L.comp }
     : { lap: L.lap, ourPos: L.pos, ourComp: L.comp, ourAge: L.age, ourPits: L.pits, usedComps: used, status: L.status,
       statusLeft: L.status ? L.statusLeft : 0, gapAhead: L.gapAhead, gapBehind: L.gapBehind, out: [...L.out] };
+  const synced = S.sync.field && L.lap > 0 && S.sync.field.lap === L.lap && S.sync.field.pos === L.pos;
+  if (synced) state.cars = S.sync.field.cars;
   let field = S.field;
   if (L.lap === 0) field = buildField(S.ev, S.driver, S.arch, { startPos: L.pos, dnfOverride: Object.fromEntries([...L.out].map(c => [c, 1])) });
   showLoader(L.lap === 0 ? "Re-planning from the grid" : `Lap ${L.lap} · P${L.pos}`);
@@ -493,7 +579,10 @@ async function runWhatIf() {
   } catch (e) { await hideLoader(); $("#console-note").textContent = e.message; return; }
   await hideLoader();
   const prev = S.history[0];
-  S.history.unshift({ id: S.history.length + 1, at: new Date(), state: { ...L, out: new Set(L.out), used: [...L.used] }, res, prevBest: prev ? prev.res.top[0].m.e_points : S.pre[S.driver + ":" + S.objective]?.top[0].m.e_points });
+  const entry = { id: S.history.length + 1, at: new Date(), state: { ...L, out: new Set(L.out), used: [...L.used] }, res, auto: !!opts.auto, synced,
+    prevBest: prev ? prev.res.top[0].m.e_points : S.pre[S.driver + ":" + S.objective]?.top[0].m.e_points };
+  S.history.unshift(entry);
+  renderCallSheet(entry, 0);
   renderHistory(true);
 }
 function renderHistory(animate) {
@@ -504,12 +593,12 @@ function renderHistory(animate) {
     const tagCls = ["", "vsc", "sc", "red"][st.status];
     const box = h("div", { class: "glass wi" });
     const head = h("div", { class: "wi-head", html:
-      `<h3>What-if #${it.id}</h3><span class="tag">${st.lap ? "L" + st.lap : "Grid"}</span><span class="tag">P${st.pos}</span><span class="tag">${COMP[st.comp]} · ${st.age}L</span><span class="tag">${st.pits} stop${st.pits === 1 ? "" : "s"}</span>` +
+      `<h3>${it.auto ? "Auto call" : "What-if"} #${it.id}</h3>${it.synced ? '<span class="tag live-tag">LIVE FIELD</span>' : ""}<span class="tag">${st.lap ? "L" + st.lap : "Grid"}</span><span class="tag">P${st.pos}</span><span class="tag">${COMP[st.comp]} · ${st.age}L</span><span class="tag">${st.pits} stop${st.pits === 1 ? "" : "s"}</span>` +
       (st.status ? `<span class="tag ${tagCls}">${STATUS_NAME[st.status]}</span>` : "") + (st.out.size ? `<span class="tag">out ${[...st.out].join(" ")}</span>` : "") +
       (d != null ? `<span class="delta ${d >= 0 ? "up" : "down"}">${d >= 0 ? "▲" : "▼"} ${Math.abs(d).toFixed(1)} exp. pts vs previous call</span>` : "") +
       `<span class="when">${it.at.toLocaleTimeString("en-GB")} · ${(it.res.ms / 1000).toFixed(1)} s · ${(it.res.races / 1000).toFixed(0)}k races</span>` });
     const restore = h("button", { class: "btn-ghost", onclick: () => { S.live = { ...it.state, out: new Set(it.state.out), used: [...it.state.used] }; renderConsole(); scrollToEl($("#sec-live")); } }, "Restore state");
-    head.append(restore);
+    head.append(h("button", { class: "btn-ghost", onclick: () => { renderCallSheet(it, 0); scrollToEl($("#callsheet")); } }, "Call sheet"), restore);
     const grid = h("div", { class: "strats", style: { marginTop: "10px" } });
     top.forEach((s, i) => grid.append(stratCard(s, i, st.lap, null)));
     box.append(head, grid);
@@ -531,7 +620,7 @@ function renderModelBox() {
       Rolling-origin backtest (refit before each race, 2024 onward): log-loss ${bt.full.ll} vs ${bt.grid_only.ll} (grid only); mean absolute error ${bt.full.mae} vs ${bt.grid_only.mae} (grid only) and ${bt.finish_eq_grid.mae} ("finish = grid"). Conditional on finishing; retirements come from the team's 2026 rate.</p>` : ""}
     <p class="note"><b>Not modelled</b>: lapped traffic, penalties, damage, rain transitions, tyre-set availability, team orders, per-car energy (ERS) state. Grid = qualifying order; penalties not verified.</p>
     <p class="note"><b>Sources</b>: ${ev.sources.map(s => `<a href="${s.url}" target="_blank" rel="noopener">${s.name}</a> (${s.used})`).join(" · ")}. Bundle generated ${new Date(ev.meta.generated).toLocaleString()}.</p>`;
-  $("#foot").innerHTML = `Pit Wall · built by Soham Savarkar · <a href="barcelona/">Barcelona 2026 case study</a> · Not affiliated with Formula 1, the FIA or Red Bull Racing. No official logos are used; team colours only.`;
+  $("#foot").innerHTML = `Pit Wall · built by Soham Savarkar · <a href="barcelona/">Barcelona 2026 case study</a> · Not affiliated with Formula 1, the FIA or Red Bull Racing. No official logos are used; team colours only. Driver photos: ${Object.values(PHOTOS).map(p => `<a href="${p.url}" target="_blank" rel="noopener">${p.credit}</a>`).join(", ")} via Wikimedia Commons, <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a> (cropped for display).`;
 }
 
 /* ------------------------------------------------------------ loader */
@@ -575,4 +664,55 @@ function onKey(e) {
   else if (k === "Enter") { e.preventDefault(); runWhatIf(); return; }
   else hit = false;
   if (hit) { e.preventDefault(); syncConsole(); }
+}
+
+/* ------------------------------------------------------------ call sheet */
+function renderCallSheet(entry, k, stintIdx = 0) {
+  const host = $("#callsheet"), cfg = S.cfg, st = entry.state, calls = entry.res.top, sel = calls[k];
+  S.zones = S.zones || trackZones(S.ev.track);
+  const stints = stintsOf(cfg, sel.plan, st.lap, st.lap ? st.age : 0), cur = stints[Math.min(stintIdx, stints.length - 1)];
+  const map = zoneMap(S.ev.track, S.zones, cur.comp, cur.level);
+  const tip = {
+    push: `Short stint for this compound: attack in the red zones, take the overtake-mode fights, push the out-lap.`,
+    balanced: `Race the gaps, not the tyre: full attack only within 1 s of the car ahead; smooth through the blue esses.`,
+    manage: `Long stint near the end of the tyre's life: lift-and-coast into T1 and T12, short-shift out of the orange exits, defend rather than attack.`,
+  }[cur.level];
+  host.classList.remove("hidden");
+  host.innerHTML = `
+    <div class="cs-head">
+      <div><div class="lab">CALL SHEET · ${entry.auto ? "AUTO · " : ""}${st.lap ? "END OF LAP " + st.lap : "GRID"} · P${st.pos}</div>
+        <h3>${sel.plan.comps.map(c => COMP[c]).join(" → ")} <span class="dim">${sel.plan.stops.length ? "· box L" + sel.plan.stops.join(", L") : "· no more stops"}</span></h3></div>
+      <div class="cs-tabs">${calls.map((c, i) => `<button aria-pressed="${i === k}" data-k="${i}"><b>${i + 1}</b><span>${c.plan.comps.map(x => COMP[x]).join("")}</span><small>${fx(c.m.e_points, 1)} pts</small></button>`).join("")}</div>
+    </div>
+    <div class="cs-body">
+      <div class="cs-map">${map.html}
+        <div class="cs-legend">${Object.values(ZONE).map(z => `<span title="${z.tip}"><i style="background:${z.col}"></i>${z.label}</span>`).join("")}</div>
+      </div>
+      <div class="cs-side">
+        <div class="lab">TYRE USAGE · REST OF RACE</div>${usageBar(stints)}
+        <div class="lab" style="margin-top:14px">STINTS <span class="dim" style="letter-spacing:0;text-transform:none">tap one</span></div>
+        <div class="cs-stints">${stints.map((x, i) => `<button class="cs-stint ${i === stintIdx ? "on" : ""}" data-i="${i}">${tyreSVG(COMP[x.comp])}<span><b>L${x.from}–${x.to}</b><small>${x.laps} laps · ${x.level}</small></span></button>`).join("")}</div>
+        ${levelGauge(cur)}
+        <p class="cs-tip">${tip}</p>
+        <div class="kpis"><div class="kpi"><b>${fx(sel.m.e_points, 1)}</b><small>Exp. pts</small></div><div class="kpi"><b>${pct(sel.m.p_win)}</b><small>Win</small></div>
+          <div class="kpi"><b>${pct(sel.m.p_podium)}</b><small>Podium</small></div><div class="kpi"><b>P${fx(sel.m.e_pos, 1)}</b><small>Avg</small></div></div>
+        <p class="note" style="margin-top:10px">Safety car or VSC with tyres ≥ ${cfg.reactMinAge} laps old: box. Zones come from the pole-lap speed trace and Pirelli's COTA notes (driving guidance, not simulated); push level = share of the tyre's usable life the stint uses (model figures).</p>
+      </div>
+    </div>`;
+  $$(".cs-tabs button", host).forEach(b => b.addEventListener("click", () => renderCallSheet(entry, +b.dataset.k, 0)));
+  $$(".cs-stint", host).forEach(b => b.addEventListener("click", () => renderCallSheet(entry, k, +b.dataset.i)));
+  // car running the lap in the stint's compound colour
+  S.sheetStop?.();
+  const Q = map.Q, n = Q.length, v = S.ev.track.speed, car = host.querySelector("#cs-car");
+  const cum = [0]; for (let i = 1; i <= n; i++) { const a = Q[i - 1], b = Q[i % n]; cum.push(cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]) / Math.max(v ? v[i - 1] : 200, 40)); }
+  let raf, t0 = performance.now();
+  const loop = now => {
+    const t = ((now - t0) / 1000 * 0.9) % cum[n];
+    let lo = 0, hi = n; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= t) lo = m; else hi = m; }
+    const a = Q[lo], b = Q[(lo + 1) % n], u = (t - cum[lo]) / Math.max(cum[lo + 1] - cum[lo], 1e-9);
+    car?.setAttribute("transform", `translate(${a[0] + (b[0] - a[0]) * u} ${a[1] + (b[1] - a[1]) * u})`);
+    raf = requestAnimationFrame(loop);
+  };
+  raf = requestAnimationFrame(loop); S.sheetStop = () => cancelAnimationFrame(raf);
+  if (S.gsap) S.gsap.fromTo(host, { opacity: 0, y: 20, scale: .99 }, { opacity: 1, y: 0, scale: 1, duration: .6, ease: "expo.out" });
 }

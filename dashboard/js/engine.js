@@ -128,6 +128,14 @@ export function simulateRace(cfg, field, state, plan, rep, record = false) {
     } else if (c === 0) {
       cum[c] = state.gap[c]; comp[c] = plan.comps[0]; stint[c] = 0;
       age[c] = state.ourAge; ageLaps[c] = state.ourAge; nextStop[c] = plan.stops.length ? plan.stops[0] : INF; pits[c] = state.ourPits;
+    } else if (state.cars && state.cars[c]) {
+      // rival with a known state (live timing): its tyre, age and stops are facts; its remaining plan
+      // comes from the sampled archetype, adjusted so it is legal from this state
+      const k0 = state.cars[c];
+      cum[c] = state.gap[c];
+      comp[c] = k0.comp; age[c] = k0.age; ageLaps[c] = k0.age; pits[c] = k0.pits; stint[c] = 0;
+      const rp = remainingPlan(cfg, cComps[c], cStops[c], L0, k0);
+      cComps[c] = rp.comps; cStops[c] = rp.stops; nextStop[c] = rp.stops.length ? rp.stops[0] : INF;
     } else {
       // rival: where its own plan has it at lap L0
       cum[c] = state.gap[c] + startN[c] * 0.15;
@@ -267,6 +275,28 @@ export function simulateRace(cfg, field, state, plan, rep, record = false) {
     ev: sawRed ? 3 : sawSC ? 2 : sawVSC ? 1 : 0, log };
 }
 
+/* Remaining plan of a rival whose tyre/age/stops are known at lap L0 (live timing). Keeps the archetype's
+   later stops and compounds where they are legal, otherwise adds the stop the rules or tyre life force. */
+export function remainingPlan(cfg, comps, stops, L0, k0) {
+  const L = cfg.laps;
+  let k = 0;
+  while (k < stops.length && stops[k] <= L0) k++;
+  let rs = stops.slice(k), rc = comps.slice(k + 1);
+  const life = cfg.maxLife[k0.comp], must = L0 + Math.max(1, life - k0.age);
+  if (rs.length) rs[0] = Math.min(rs[0], must);
+  const used = new Set([...(k0.used || []), k0.comp, ...rc.slice(0, rs.length)]);
+  if (!rs.length && (used.size < 2 || k0.age + (L - L0) > life + 3)) { rs = [must]; rc = [k0.comp === 2 ? 1 : 2]; }
+  const outS = [], outC = [];
+  for (let i = 0; i < rs.length; i++) {
+    let x = Math.max(rs[i], L0 + 1, i ? outS[i - 1] + cfg.minStint : 0);
+    if (x >= L - 1) break;
+    outS.push(x);
+    const prev = i ? outC[i - 1] : k0.comp;
+    outC.push(rc[i] != null ? rc[i] : prev === 2 ? 1 : 2);
+  }
+  return { comps: [k0.comp, ...outC], stops: outS };
+}
+
 /* Build the starting state.
  * pre-race:  { lap:0, slotOf:{carIndex: gridSlot0} }
  * live:      { lap, ourPos, ourAge, ourPits, usedComps:[...], gapAhead, gapBehind, status, statusLeft, out:[codes] }
@@ -276,6 +306,12 @@ export function initialState(cfg, field, s) {
   if (!s || !s.lap) {
     const slot = field.cars.map(c => c.grid - 1);
     return { lap: 0, slot, gap: new Array(C).fill(0), status: s?.status || GREEN, statusLeft: s?.statusLeft || 0, out: null };
+  }
+  if (s.cars) {
+    // full field from live timing: s.cars[i] = {gap, comp, age, pits, used, out} per car index
+    const gap = s.cars.map(k => (k && !k.out ? k.gap : 0)), out = s.cars.map(k => !k || !!k.out);
+    return { lap: s.lap, gap, cars: s.cars, ourAge: s.ourAge, ourPits: s.ourPits, usedComps: s.usedComps,
+      status: s.status || GREEN, statusLeft: s.statusLeft || 0, out };
   }
   // running order: rivals keep their grid order, ours is inserted at ourPos
   const rivals = field.cars.map((c, i) => ({ i, g: c.grid })).filter(x => x.i !== 0).sort((a, b) => a.g - b.g).map(x => x.i);
@@ -372,5 +408,7 @@ export function pickTop3(ranked, score, tol) {
     chosen.push(pick); seen.add(key(pick));
     pool = pool.filter(p => p !== pick);
   }
+  // fewer than three distinct tyre sequences exist: fill with the next best plans (different stop laps)
+  for (const p of ranked) { if (chosen.length >= 3) break; if (!chosen.includes(p)) chosen.push(p); }
   return chosen;
 }

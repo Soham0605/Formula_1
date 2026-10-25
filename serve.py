@@ -7,6 +7,12 @@
     python serve.py --no-api        # static files only, the control panel is disabled
     python serve.py --workers 8     # cores used by runs started from the browser
 
+OpenF1 relay (race console live sync):
+    GET  /api/openf1/<endpoint>?...   forwards laps / stints / race_control / intervals / position / pit / sessions /
+                                      drivers to api.openf1.org. With OPENF1_USERNAME and OPENF1_PASSWORD set it adds a
+                                      bearer token (fetched and refreshed here), which OpenF1 requires during live sessions.
+                                      Credentials stay on this machine; the browser never sees them.
+
 API (used by the dashboard, JSON):
     GET  /api/state        -> {api, running, job, workers}
     POST /api/run          -> body {"params": {...}, "quality": "quick|standard|full"}; returns the job (cached results return at once)
@@ -30,6 +36,9 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -52,6 +61,48 @@ QUALITY = {"quick": "~15 s", "standard": "~1-2 min", "full": "~4 min"}
 STATE = dict(job=None)
 LOCK = threading.Lock()
 SETTINGS = dict(workers=1, api=True)
+
+
+OPENF1 = "https://api.openf1.org"
+OPENF1_ENDPOINTS = {"laps", "stints", "race_control", "intervals", "position", "pit", "sessions", "drivers"}
+_TOKEN = dict(value=None, until=0.0)
+_RELAY_CACHE: dict = {}
+
+
+def openf1_token():
+    """Bearer token from OPENF1_USERNAME / OPENF1_PASSWORD (OAuth password flow, 1 h lifetime), cached."""
+    user, pw = os.environ.get("OPENF1_USERNAME"), os.environ.get("OPENF1_PASSWORD")
+    if not (user and pw):
+        return None
+    if _TOKEN["value"] and time.time() < _TOKEN["until"] - 120:
+        return _TOKEN["value"]
+    body = urllib.parse.urlencode({"username": user, "password": pw}).encode()
+    req = urllib.request.Request(f"{OPENF1}/token", data=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        d = json.loads(r.read())
+    _TOKEN.update(value=d["access_token"], until=time.time() + float(d.get("expires_in", 3600)))
+    return _TOKEN["value"]
+
+
+def openf1_relay(endpoint, raw_query):
+    """Forward one whitelisted OpenF1 request. Browsers percent-encode '<' and '>' in filters; OpenF1 wants them raw."""
+    pairs = [urllib.parse.unquote(x) for x in raw_query.split("&") if x]
+    q = "&".join(urllib.parse.quote(x, safe="=<>:+-._") for x in pairs)
+    key = (endpoint, q)
+    hit = _RELAY_CACHE.get(key)
+    if hit and time.time() - hit[0] < 5:
+        return hit[1], hit[2]
+    headers = {"User-Agent": "pit-wall-relay"}
+    tok = openf1_token()
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f"{OPENF1}/v1/{endpoint}?{q}", headers=headers), timeout=25) as r:
+            code, body = r.status, r.read()
+    except urllib.error.HTTPError as e:
+        code, body = e.code, e.read()
+    _RELAY_CACHE[key] = (time.time(), code, body)
+    return code, body
 
 
 def clean(params):
@@ -163,11 +214,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        m = re.search(r"/api/openf1/([a-z_]+)$", path.rstrip("/"))
+        if m:
+            if m.group(1) not in OPENF1_ENDPOINTS:
+                return self._json(dict(error="endpoint not allowed"), 404)
+            try:
+                code, body = openf1_relay(m.group(1), self.path.split("?", 1)[1] if "?" in self.path else "")
+            except Exception as e:  # noqa: BLE001
+                return self._json(dict(detail=f"relay error: {e}"), 502)
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path.rstrip("/").endswith("/api/state"):
             if not SETTINGS["api"]:
-                return self._json(dict(api=False))
+                return self._json(dict(api=False, openf1_relay=True, openf1_auth=bool(os.environ.get("OPENF1_USERNAME"))))
             job = STATE["job"]
-            return self._json(dict(api=True, running=bool(job and job["status"] == "running"), job=public(job),
+            return self._json(dict(api=True, openf1_relay=True, openf1_auth=bool(os.environ.get("OPENF1_USERNAME")),
+                                   running=bool(job and job["status"] == "running"), job=public(job),
                                    workers=SETTINGS["workers"], quality=QUALITY, limits={k: [v[1], v[2]] for k, v in ALLOWED.items()}))
         return super().do_GET()
 

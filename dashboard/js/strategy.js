@@ -56,6 +56,9 @@ export async function search(cfg, field, state, opts = {}) {
   order = keep.map((p, i) => [p, r2[i]]).sort((x, y) => obj.f(y[1]) - obj.f(x[1]));
   let fin = order.slice(0, q.keep2).map(x => x[0]);
   for (const n of new Set(keep.map(p => p.n))) fin.push(...order.filter(x => x[0].n === n).slice(0, 2).map(x => x[0]));
+  // the best plan of each distinct tyre sequence, so the final round can always offer three different calls
+  const seen = new Set();
+  for (const [p] of order) { const k = p.n + ":" + p.comps.join(""); if (!seen.has(k)) { seen.add(k); fin.push(p); } if (seen.size >= 8) break; }
   fin = [...new Set(fin)];
   const r3 = await run(fin, q.s3, 0.65, 1.0, `Final ${fin.length} plans × ${q.s3} races`, true);
   const ranked = fin.map((p, i) => ({ plan: p, m: r3[i] })).sort((x, y) => obj.f(y.m) - obj.f(x.m));

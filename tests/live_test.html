@@ -1,0 +1,55 @@
+<!doctype html><meta charset="utf-8"><body><pre id="out">running</pre>
+<script type="module">
+// OpenF1-shaped fixture (schemas as recorded from the real API): lap 10 done, VER P3 on mediums age 10,
+// NOR pitted at end of lap 9 onto hards, BOT retired on lap 6, VSC deployed during lap 10.
+const ev = await (await fetch("../dashboard/data/event/usa_2026.json")).json();
+const T0 = Date.parse("2026-10-25T20:20:00Z"), grid = ev.grid;
+const order = ["ANT","LEC","VER","HAD","HAM","RUS","PIA","LIN","NOR","LAW","GAS","HUL","BOR","COL","ALO","BEA","OCO","STR","SAI","ALB","PER"];
+const laps = [], stints = [];
+for (const g of grid) {
+  const k = order.indexOf(g.code);
+  if (k < 0) { // BOT: retired after lap 6
+    for (let l = 1; l <= 6; l++) laps.push({ driver_number: g.number, lap_number: l, date_start: new Date(T0 - (11 - l) * 100000).toISOString(), lap_duration: 100 });
+    stints.push({ driver_number: g.number, stint_number: 1, lap_start: 1, lap_end: 6, compound: "MEDIUM", tyre_age_at_start: 0 });
+    continue;
+  }
+  for (const l of [8, 9, 10, 11]) laps.push({ driver_number: g.number, lap_number: l, date_start: new Date(T0 + (l - 11) * 100000 + k * 1300).toISOString(), lap_duration: 100 });
+  if (g.code === "NOR") { stints.push({ driver_number: g.number, stint_number: 1, lap_start: 1, lap_end: 9, compound: "MEDIUM", tyre_age_at_start: 0 }, { driver_number: g.number, stint_number: 2, lap_start: 10, lap_end: null, compound: "HARD", tyre_age_at_start: 0 }); }
+  else stints.push({ driver_number: g.number, stint_number: 1, lap_start: 1, lap_end: null, compound: g.code === "HAD" ? "SOFT" : "MEDIUM", tyre_age_at_start: g.code === "HAD" ? 3 : 0 });
+}
+const rc = [{ date: new Date(T0 - 40000).toISOString(), category: "SafetyCar", message: "VSC DEPLOYED", flag: null }];
+const realFetch = window.fetch;
+window.fetch = async (url, o) => {
+  if (!String(url).startsWith("https://api.openf1.org")) return realFetch(url, o);
+  const u = new URL(url), path = u.pathname.split("/").pop();
+  const lo = +(u.searchParams.get("lap_number>") ?? -1), hi = +(u.searchParams.get("lap_number<") ?? 1e9);
+  const body = path === "laps" ? laps.filter(r => r.lap_number >= lo && r.lap_number <= hi) : path === "stints" ? stints : path === "race_control" ? rc : [];
+  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+};
+const { fieldAtLap, currentLap } = await import("../dashboard/js/live.js");
+const { buildConfig, buildField } = await import("../dashboard/js/model.js");
+const { fieldArchetypes, remainingPlan, initialState, simulateRace, summarise } = await import("../dashboard/js/engine.js");
+const { search } = await import("../dashboard/js/strategy.js");
+const log = [], ok = (c, m) => log.push((c ? "PASS " : "FAIL ") + m);
+const f = await fieldAtLap(11396, 10, grid);
+ok(f.cars.VER.pos === 3 && Math.abs(f.cars.VER.gap - 2.6) < 1e-6, `VER P3 gap 2.6s -> P${f.cars.VER.pos} ${f.cars.VER.gap}`);
+ok(f.cars.VER.comp === 1 && f.cars.VER.age === 10 && f.cars.VER.pits === 0, `VER medium age 10, 0 stops -> ${f.cars.VER.comp}/${f.cars.VER.age}/${f.cars.VER.pits}`);
+ok(f.cars.NOR.comp === 2 && f.cars.NOR.age === 1 && f.cars.NOR.pits === 1 && f.cars.NOR.used.length === 2, `NOR hard age 1, 1 stop -> ${JSON.stringify(f.cars.NOR)}`);
+ok(f.cars.HAD.comp === 0 && f.cars.HAD.age === 13, `HAD soft fitted with 3 laps -> age ${f.cars.HAD.age}`);
+ok(f.cars.BOT.out === true, "BOT retired");
+ok(f.status === 1, `VSC active -> status ${f.status}`);
+ok(await currentLap(11396, 8) === 10, "leader has completed 10 laps");
+const cfg = buildConfig(ev, { airC: 27.5 }), arch = fieldArchetypes(cfg), field = buildField(ev, "max_verstappen", arch);
+const rp = remainingPlan(cfg, [1, 2], [23], 30, { comp: 1, age: 30, used: [1] });
+ok(rp.stops[0] === 31, `rival on a worn-out medium (age 30 > life 28) stops next lap: ${JSON.stringify(rp)}`);
+const rp2 = remainingPlan(cfg, [1, 2], [23], 30, { comp: 2, age: 7, used: [1] });
+ok(rp2.stops.length === 0, `rival already on 2nd compound, fresh: no more stops ${JSON.stringify(rp2)}`);
+const cars = field.cars.map(c => f.cars[c.code]);
+const state = { lap: 10, ourPos: 3, ourComp: 1, ourAge: 10, ourPits: 0, usedComps: [1], status: f.status, statusLeft: 2, cars };
+const st = initialState(cfg, field, state);
+ok(st.out.filter(Boolean).length === 1 && st.gap[0] === 2.6, `initial state: 1 out, our gap ${st.gap[0]}`);
+const t = performance.now(), res = await search(cfg, field, state, { quality: "fast" });
+ok(res.top.length === 3, `search from live field: ${res.n_candidates} plans in ${(res.ms / 1000).toFixed(1)} s`);
+for (const s of res.top) log.push(`   ${s.plan.label}  pts ${s.m.e_points.toFixed(2)} pod ${(s.m.p_podium * 100).toFixed(1)} E[pos] ${s.m.e_pos.toFixed(2)}`);
+document.getElementById("out").textContent = log.join("\n"); window.DONE = true;
+</script>
