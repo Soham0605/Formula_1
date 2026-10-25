@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.venv/
+dashboard/barcelona/data/cache/
+data/fastf1_cache/

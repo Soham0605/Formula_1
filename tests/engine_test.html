@@ -1,0 +1,39 @@
+<!doctype html><meta charset="utf-8"><body><pre id="out">running</pre>
+<script type="module">
+import { fieldArchetypes, candidates, initialState, simulateRace, summarise, SC } from "../dashboard/js/engine.js";
+import { buildConfig, buildField, finishProbs, driverFeatures } from "../dashboard/js/model.js";
+import { search } from "../dashboard/js/strategy.js";
+const log = [];
+const ev = await (await fetch("../dashboard/data/event/usa_2026.json")).json();
+const model = await (await fetch("../dashboard/data/model/finish_model.json")).json();
+const cfg = buildConfig(ev, { airC: 27.5 });
+const arch = fieldArchetypes(cfg);
+log.push("archetypes " + JSON.stringify(arch.map(a => [a.comps.join(""), a.stops, Math.round(a.t)])));
+const field = buildField(ev, "max_verstappen", arch);
+// determinism + CRN
+const st = initialState(cfg, field, { lap: 0 });
+const p = { comps: [1, 2], stops: [22], reactSC: true, n: 1 };
+const a = simulateRace(cfg, field, st, p, 5), b = simulateRace(cfg, field, st, p, 5);
+log.push("deterministic " + (JSON.stringify(a) === JSON.stringify(b)));
+// distribution of one plan
+let t = performance.now(); const res = []; for (let r = 0; r < 2000; r++) res.push(simulateRace(cfg, field, st, p, r));
+const m = summarise(res, 22); log.push(`1 plan x 2000 races: ${(performance.now() - t).toFixed(0)} ms  win ${m.p_win.toFixed(3)} pod ${m.p_podium.toFixed(3)} dnf ${m.p_dnf.toFixed(3)} E[pos] ${m.e_pos.toFixed(2)} sum ${(m.hist.reduce((x, y) => x + y) + m.p_dnf).toFixed(4)}`);
+log.push("SC share " + (res.filter(x => x.ev === 2).length / 2000).toFixed(3) + " VSC-only " + (res.filter(x => x.ev === 1).length / 2000).toFixed(3));
+log.push("gap p50 (s) " + m.gap_p50?.toFixed(1));
+log.push("candidates pre-race " + candidates(cfg, { lap: 0 }).length + "; live L20 on M age 20 " + candidates(cfg, { lap: 20, ourComp: 1, ourAge: 20, ourPits: 0, usedComps: [1] }).length);
+const x = driverFeatures(model, "max_verstappen"); const pf = finishProbs(model, x);
+log.push("ML VER P(top3|cl) " + pf.slice(0, 3).reduce((s, v) => s + v).toFixed(3) + " sum " + pf.reduce((s, v) => s + v).toFixed(4));
+t = performance.now();
+const out = await search(cfg, field, { lap: 0 }, { quality: "fast", onStage: () => {} });
+log.push(`search: ${out.n_candidates} cands, ${out.races} races, ${(out.ms / 1000).toFixed(1)} s, workers ${navigator.hardwareConcurrency}`);
+for (const s of out.top) log.push(`  ${s.plan.label}  pts ${s.m.e_points.toFixed(2)} win ${(s.m.p_win*100).toFixed(1)} pod ${(s.m.p_podium*100).toFixed(1)} E[pos] ${s.m.e_pos.toFixed(2)} trace ${s.m.trace ? s.m.trace.pos.length : 'none'}`);
+// live: lap 3, dropped to P4 on mediums
+t = performance.now();
+const live = await search(cfg, field, { lap: 3, ourPos: 4, ourComp: 1, ourAge: 3, ourPits: 0, usedComps: [1] }, { quality: "fast" });
+log.push(`live L3 P4: ${live.n_candidates} cands ${(live.ms / 1000).toFixed(1)} s`);
+for (const s of live.top) log.push(`  ${s.plan.label}  pts ${s.m.e_points.toFixed(2)} pod ${(s.m.p_podium*100).toFixed(1)} E[pos] ${s.m.e_pos.toFixed(2)}`);
+const sc = await search(cfg, field, { lap: 18, ourPos: 3, ourComp: 1, ourAge: 18, ourPits: 0, usedComps: [1], status: SC, statusLeft: 3 }, { quality: "fast" });
+log.push(`SC on L18 P3 on 18-lap mediums:`);
+for (const s of sc.top) log.push(`  ${s.plan.label}  pts ${s.m.e_points.toFixed(2)} pod ${(s.m.p_podium*100).toFixed(1)} E[pos] ${s.m.e_pos.toFixed(2)}`);
+document.getElementById("out").textContent = log.join("\n"); window.DONE = true;
+</script>

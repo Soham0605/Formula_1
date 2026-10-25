@@ -34,7 +34,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE / "dashboard"
-CACHE = ROOT / "data" / "cache"
+CACHE = ROOT / "barcelona" / "data" / "cache"   # Barcelona case-study runs
 MAX_CACHE = 40
 
 # name: (type, min, max). Anything not listed here is rejected.
@@ -163,7 +163,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
-        if path.rstrip("/") == "/api/state":
+        if path.rstrip("/").endswith("/api/state"):
             if not SETTINGS["api"]:
                 return self._json(dict(api=False))
             job = STATE["job"]
@@ -173,7 +173,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
-        if path.rstrip("/") != "/api/run" or not SETTINGS["api"]:
+        if not path.rstrip("/").endswith("/api/run") or not SETTINGS["api"]:
             return self._json(dict(error="not found"), 404)
         try:
             n = int(self.headers.get("Content-Length", "0"))
@@ -193,8 +193,8 @@ def main():
     a = ap.parse_args()
     from f1strat.strategies import default_workers
     SETTINGS.update(workers=a.workers or default_workers(), api=not a.no_api)
-    if not (ROOT / "data" / "results.json").exists():
-        print("results.json not found: run `python run_analysis.py` first, or press Run in the dashboard.")
+    if not (ROOT / "data" / "event").exists():
+        print("Event bundle not found: run `python fetch_event.py` (race console) first.")
     host = "127.0.0.1" if a.local else "0.0.0.0"
     handler = functools.partial(Handler, directory=str(ROOT))
     socketserver.ThreadingTCPServer.allow_reuse_address = True

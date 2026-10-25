@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the Barcelona-Catalunya 2026 strategy analysis and write dashboard/data/results.json.
+"""Run the Barcelona-Catalunya 2026 strategy analysis and write dashboard/barcelona/data/results.json.
 
     python run_analysis.py                 # full run
     python run_analysis.py --quick         # small smoke test (~1 min)
@@ -31,7 +31,7 @@ def main():
     ap.add_argument("--lap1-pos", type=int, default=None, help="running order after turn 1 (default 4)")
     ap.add_argument("--grid-pos", type=int, default=None, help="qualifying position (default 3)")
     ap.add_argument("--no-uncertainty", action="store_true", help="disable parameter uncertainty")
-    ap.add_argument("--out", default=str(ROOT / "dashboard" / "data"))
+    ap.add_argument("--out", default=str(ROOT / "dashboard" / "barcelona" / "data"))
     ap.add_argument("--calibration", default=str(ROOT / "data" / "calibration.json"))
     ap.add_argument("--track", default=str(ROOT / "data" / "track_real.json"))
     a = ap.parse_args()
