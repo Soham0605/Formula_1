@@ -438,8 +438,17 @@ function renderConsole() {
     <button class="btn-ghost ${sy.auto ? "active" : ""}" id="sync-auto" aria-pressed="${sy.auto}">${sy.auto ? "Auto ON" : "Auto off"}</button>
     <input type="password" id="sync-token" placeholder="OpenF1 token (live sessions)" value="${getToken() ? "••••••••" : ""}" autocomplete="off" aria-label="OpenF1 bearer token">
   </div>
+  <div class="state-banner" id="sban">
+    <div class="sb-item"><b id="sban-lap">0</b><small>Lap</small></div>
+    <div class="sb-item"><b id="sban-pos">P1</b><small>Position</small></div>
+    <div class="sb-item"><b id="sban-comp">M</b><small>Tyre</small></div>
+    <div class="sb-item"><b id="sban-age">0L</b><small>Age</small></div>
+    <div class="sb-item"><b id="sban-pits">0</b><small>Stops</small></div>
+    <div class="sb-item"><b id="sban-status">GREEN</b><small>Status</small></div>
+  </div>
   <div class="ctl">
     <h4>Lap completed <kbd>← →</kbd></h4>
+    <div class="quick-laps" id="qlaps">${[10, 20, 30, 40, 50].filter(l => l < laps).map(l => `<button data-l="${l}">L${l}</button>`).join("")}</div>
     <div class="stepper" id="lap-st"><button data-d="-1" aria-label="Previous lap">−</button><div class="val"><b class="num" id="lap-v"></b><small>of ${laps}</small></div><button data-d="1" aria-label="Next lap">+</button></div>
     <input type="range" min="0" max="${laps - 1}" id="lap-r" aria-label="Lap">
     <h4>Running position <kbd>↑ ↓</kbd></h4>
@@ -478,6 +487,7 @@ function renderConsole() {
   step("pits-st", d => { L.pits = clamp(L.pits + d, 0, 3); });
   step("ga-st", d => { L.gapAhead = L.gapAhead == null ? (d > 0 ? 1.0 : null) : (L.gapAhead + d * 0.5 <= 0 ? null : +(L.gapAhead + d * 0.5).toFixed(1)); });
   step("gb-st", d => { L.gapBehind = L.gapBehind == null ? (d > 0 ? 1.0 : null) : (L.gapBehind + d * 0.5 <= 0 ? null : +(L.gapBehind + d * 0.5).toFixed(1)); });
+  $$("#qlaps button", host).forEach(b => b.addEventListener("click", () => { setLap(+b.dataset.l); syncConsole(); }));
   $("#lap-r", host).addEventListener("input", e => { setLap(+e.target.value); syncConsole(); });
   $$("#status button", host).forEach(b => b.addEventListener("click", () => { L.status = +b.dataset.v; if (L.status === RED) L.statusLeft = 1; syncConsole(); }));
   $$("#tyre button", host).forEach(b => b.addEventListener("click", () => { setComp(+b.dataset.v); syncConsole(); }));
@@ -556,6 +566,14 @@ function syncConsole() {
   if (L.lap > 0 && L.pits === 0 && L.age < L.lap) warn.push("No stop made but tyre age < laps run: check the age or the stop count.");
   if (L.lap > 0 && L.pits > 0 && used.size < 2) warn.push("A stop was made: mark the compound used before it.");
   $("#console-note").textContent = warn.join(" ");
+  const sbl = $("#sban-lap"); if (sbl) {
+    sbl.textContent = L.lap || "0";
+    const sbp = $("#sban-pos"); if (sbp) sbp.textContent = "P" + L.pos;
+    const sbc = $("#sban-comp"); if (sbc) { sbc.textContent = COMP[L.comp]; sbc.style.color = ["var(--soft)", "var(--med)", "var(--hard)"][L.comp]; }
+    const sba = $("#sban-age"); if (sba) sba.textContent = L.age + "L";
+    const sbpi = $("#sban-pits"); if (sbpi) sbpi.textContent = L.pits;
+    const sbst = $("#sban-status"); if (sbst) { sbst.textContent = STATUS_NAME[L.status]; sbst.style.color = ["var(--good)", "var(--warn)", "var(--s3)", "var(--bad)"][L.status]; }
+  }
 }
 
 async function runWhatIf(opts = {}) {
@@ -584,6 +602,7 @@ async function runWhatIf(opts = {}) {
   S.history.unshift(entry);
   renderCallSheet(entry, 0);
   renderHistory(true);
+  setTimeout(() => scrollToEl($("#callsheet")), 250);
 }
 function renderHistory(animate) {
   const host = $("#history"); host.innerHTML = "";
