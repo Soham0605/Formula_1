@@ -17,15 +17,57 @@ const PHOTOS = {
 };
 
 const S = { cal: null, ev: null, model: null, wx: null, driver: null, objective: "points", cfg: null, arch: null, field: null,
-  pre: {}, live: null, history: [], gsap: null, lenis: null, bg: null, stops: [], raceClicks: [],
+  pre: {}, live: null, history: [], gsap: null, lenis: null, bg: null, bgStop: null, stops: [], raceClicks: [],
   sync: { field: null, auto: false, every: 10, timer: null, next: 0, busy: false }, sheet: null };
 const STATUS_NAME = ["GREEN", "VSC", "SC", "RED"];
 const TZ_USER = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+/* ------------------------------------------------------------ background switcher */
+function switchBg(mode) {
+  S.bgStop?.(); S.bgStop = null; S.bg = null;
+  const el = $("#bg");
+  while (el.firstChild) el.removeChild(el.firstChild);
+  localStorage.setItem("pitwall_bg", mode);
+  if (mode === "shader") {
+    startBackground(el).then(b => { S.bg = b; if (S.ev) S.bg.setEnergy?.(.55); }).catch(() => {});
+  } else if (mode === "iso") {
+    import("./bg-iso.js").then(({ startIsoEngine }) => {
+      const bg = startIsoEngine(el); S.bgStop = () => bg.stop();
+    }).catch(e => console.warn("iso bg:", e));
+  }
+}
+function initBgMenu() {
+  let menu = null;
+  const close = () => { menu?.remove(); menu = null; };
+  const MODES = [
+    { id: "shader", icon: "〜", title: "Shader waves", desc: "Animated deep-space shader" },
+    { id: "iso",    icon: "⬡", title: "Engine build",  desc: "Isometric F1 power unit" },
+    { id: "plain",  icon: "○", title: "Plain dark",    desc: "No background distraction" },
+  ];
+  document.addEventListener("contextmenu", e => {
+    e.preventDefault(); close();
+    const cur = localStorage.getItem("pitwall_bg") || "shader";
+    menu = h("div", { class: "bg-menu glass", style: `left:${Math.min(e.clientX + 4, innerWidth - 248)}px;top:${Math.min(e.clientY + 4, innerHeight - 180)}px` });
+    const lbl = h("div", { class: "bg-menu-label" }, "Background");
+    menu.append(lbl);
+    MODES.forEach(m => {
+      const btn = h("button", { class: "bg-opt" + (m.id === cur ? " active" : ""), onclick: () => { switchBg(m.id); close(); } });
+      btn.innerHTML = `<span class="bg-icon">${m.icon}</span><span><b>${m.title}</b><small>${m.desc}</small></span>${m.id === cur ? '<span class="bg-check">✓</span>' : ""}`;
+      menu.append(btn);
+    });
+    document.body.append(menu);
+    requestAnimationFrame(() => menu.classList.add("on"));
+  });
+  document.addEventListener("click", close);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+}
+
 /* ------------------------------------------------------------ boot */
 boot();
 async function boot() {
-  startBackground($("#bg")).then(b => { S.bg = b; }).catch(() => {});
+  const savedBg = localStorage.getItem("pitwall_bg") || "shader";
+  switchBg(savedBg);
+  initBgMenu();
   loadMotionLibs();
   try {
     S.cal = await (await fetch("data/calendar.json", { cache: "no-store" })).json();

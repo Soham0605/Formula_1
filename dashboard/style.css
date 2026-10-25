@@ -47,7 +47,7 @@ button { cursor: pointer; }
   animation: grain 1.2s steps(3) infinite; }
 @keyframes grain { 0% { transform: translate(0, 0) } 33% { transform: translate(-3%, 2%) } 66% { transform: translate(2%, -3%) } }
 main { position: relative; z-index: 2; }
-.wrap { width: min(1320px, calc(100% - 40px)); margin: 0 auto; }
+.wrap { width: min(1680px, calc(100% - 48px)); margin: 0 auto; }
 
 /* ------------------------------------------------------------ top bar */
 .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 50; display: flex; align-items: center; gap: 18px;
@@ -347,6 +347,23 @@ input[type=range] { width: 100%; accent-color: var(--rb-gold); }
 .tagp.calibrated { background: rgba(47, 168, 255, .15); color: var(--s2); }
 footer.foot { position: relative; z-index: 2; padding: 50px 0 60px; color: var(--ink3); font-size: 12px; line-height: 1.7; }
 footer.foot a { color: var(--ink2); }
+
+/* ------------------------------------------------------------ bg context menu */
+.bg-menu { position: fixed; z-index: 300; min-width: 230px; padding: 6px; border-radius: 18px; border: 1px solid rgba(255,255,255,.18);
+  background: rgba(8,12,22,.96); backdrop-filter: blur(28px); box-shadow: 0 24px 60px rgba(0,0,0,.85), 0 0 0 1px rgba(255,255,255,.06);
+  opacity: 0; transform: scale(.94); transition: opacity .18s, transform .18s; pointer-events: none; }
+.bg-menu.on { opacity: 1; transform: none; pointer-events: auto; }
+.bg-menu-label { font-size: 9px; letter-spacing: .3em; text-transform: uppercase; color: var(--ink3); padding: 6px 12px 4px; }
+.bg-opt { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 12px; border: 0;
+  background: none; text-align: left; transition: background .12s; }
+.bg-opt:hover { background: rgba(255,255,255,.07); }
+.bg-opt.active { background: rgba(255,201,6,.08); }
+.bg-opt .bg-icon { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; font-size: 16px;
+  border: 1px solid var(--line); background: rgba(255,255,255,.04); flex: none; }
+.bg-opt.active .bg-icon { border-color: rgba(255,201,6,.5); color: var(--rb-gold); }
+.bg-opt b { display: block; font-size: 13px; }
+.bg-opt small { display: block; font-size: 11px; color: var(--ink3); margin-top: 1px; }
+.bg-opt .bg-check { margin-left: auto; color: var(--rb-gold); font-size: 14px; flex: none; }
 .hidden { display: none !important; }
 .empty { padding: 26px; text-align: center; color: var(--ink2); }
 :focus-visible { outline: 2px solid var(--rb-gold); outline-offset: 2px; }
