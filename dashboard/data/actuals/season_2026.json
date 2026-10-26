@@ -1,0 +1,14 @@
+{
+  "season": 2026,
+  "races": [
+    {
+      "round": 18,
+      "slug": "usa_2026",
+      "file": "usa_2026_actual.json",
+      "drivers": ["max_verstappen", "hadjar"],
+      "winner_code": "ANT",
+      "race_events_count": 2
+    }
+  ],
+  "updated_at": "2026-10-26T00:00:00Z"
+}

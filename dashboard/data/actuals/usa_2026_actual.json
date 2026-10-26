@@ -1,0 +1,67 @@
+{
+  "round": 18,
+  "season": 2026,
+  "slug": "usa_2026",
+  "race_name": "United States Grand Prix",
+  "circuit": "Circuit of the Americas",
+  "locality": "Austin",
+  "country": "USA",
+  "drivers": {
+    "max_verstappen": {
+      "code": "VER",
+      "number": 3,
+      "qualifying_pos": 2,
+      "finish_pos": 3,
+      "positions_gained": -1,
+      "classified": true,
+      "status": "Finished",
+      "points": 15,
+      "strategy": {
+        "compounds": ["S", "S", "M"],
+        "stop_laps": [13, 31],
+        "stops": 2
+      },
+      "fastest_lap": null,
+      "laps_completed": 56
+    },
+    "hadjar": {
+      "code": "HAD",
+      "number": 6,
+      "qualifying_pos": 3,
+      "finish_pos": 6,
+      "positions_gained": -3,
+      "classified": true,
+      "status": "Finished",
+      "points": 8,
+      "strategy": {
+        "compounds": ["S", "H"],
+        "stop_laps": [25],
+        "stops": 1
+      },
+      "fastest_lap": null,
+      "laps_completed": 56
+    }
+  },
+  "race_events": [
+    { "type": "VSC", "lap": 2,  "end_lap": 2,  "description": "Brief VSC (Turn 1 incident)" },
+    { "type": "VSC", "lap": 51, "end_lap": 53, "description": "VSC laps 51-53" }
+  ],
+  "winner": { "code": "ANT", "driver_id": "antonelli", "team": "mercedes" },
+  "top5": ["ANT", "LEC", "VER", "HAM", "NOR"],
+  "full_results": [
+    { "pos": 1,  "code": "ANT", "driver_id": "antonelli",       "team": "mercedes",     "grid": 1,  "status": "Finished", "points": 25 },
+    { "pos": 2,  "code": "LEC", "driver_id": "leclerc",         "team": "ferrari",      "grid": 4,  "status": "Finished", "points": 18 },
+    { "pos": 3,  "code": "VER", "driver_id": "max_verstappen",  "team": "red_bull",     "grid": 2,  "status": "Finished", "points": 15 },
+    { "pos": 4,  "code": "HAM", "driver_id": "hamilton",        "team": "ferrari",      "grid": 5,  "status": "Finished", "points": 12 },
+    { "pos": 5,  "code": "NOR", "driver_id": "norris",          "team": "mclaren",      "grid": 6,  "status": "Finished", "points": 10 },
+    { "pos": 6,  "code": "HAD", "driver_id": "isack_hadjar",    "team": "red_bull",     "grid": 3,  "status": "Finished", "points": 8  },
+    { "pos": 7,  "code": "PIA", "driver_id": "piastri",         "team": "mclaren",      "grid": 7,  "status": "Finished", "points": 6  },
+    { "pos": 8,  "code": "RUS", "driver_id": "russell",         "team": "mercedes",     "grid": 8,  "status": "Finished", "points": 4  },
+    { "pos": 9,  "code": "ALO", "driver_id": "alonso",          "team": "aston_martin", "grid": 9,  "status": "Finished", "points": 2  },
+    { "pos": 10, "code": "STR", "driver_id": "stroll",          "team": "aston_martin", "grid": 10, "status": "Finished", "points": 1  }
+  ],
+  "laps": 56,
+  "notes": "Two VSC periods: brief on lap 2, then laps 51-53. VER ran an unusual S-S-M strategy with a very early first stop (lap 13) and second stop lap 31. ANT won from pole for Mercedes. HAD went long on a single-stop S-H from P3, finishing P6.",
+  "fetched_at": "2026-10-26T00:00:00Z",
+  "sources": ["Jolpica (ergast API)", "OpenF1 (session key 11396)"]
+}

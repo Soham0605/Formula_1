@@ -7,6 +7,7 @@ import { search } from "./strategy.js";
 import { startBackground } from "./bg.js";
 import { fieldAtLap, currentLap, getToken, setToken } from "./live.js";
 import { trackZones, zoneMap, stintsOf, usageBar, levelGauge, ZONE } from "./callsheet.js";
+import { loadSeasonTracker, savePrediction } from "./season.js";
 
 /* Driver photos: Wikimedia Commons, CC BY-SA 4.0 (credited in the footer and on hover). */
 const PHOTOS = {
@@ -78,6 +79,12 @@ async function boot() {
   $("#season-label").textContent = S.cal.season;
   buildPicker();
   tickClock(); setInterval(tickClock, 1000);
+  // Season tracker loads in background — no await so boot isn't blocked
+  const secSeason = $("#sec-season");
+  if (secSeason) {
+    loadSeasonTracker(S.cal.season, $("#season-tracker"), $("#season-aside"))
+      .then(() => secSeason.classList.remove("hidden")).catch(() => {});
+  }
   const live = S.cal.races.find(r => r.status === "live");
   if (live) { $("#countdown").classList.remove("hidden"); }
   document.addEventListener("keydown", onKey);
@@ -352,6 +359,10 @@ async function runPreRace() {
   S.live.comp = best.plan.comps[0];
   renderPrediction(res);
   renderStrategies(res);
+  // Save prediction snapshot for season tracker comparison
+  const g2 = S.ev.grid.find(x => x.driver_id === S.driver);
+  const D2 = blendDist(res);
+  savePrediction(S.ev.meta, S.driver, S.objective, g2.pos, res, stats(D2.blend), best);
   renderConsole();
   renderHistory();
   ["#sec-pred", "#sec-strat", "#sec-live"].forEach(s => $(s).classList.remove("hidden"));
