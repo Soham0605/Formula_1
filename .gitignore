@@ -3,3 +3,4 @@ __pycache__/
 .venv/
 dashboard/barcelona/data/cache/
 data/fastf1_cache/
+_context/
