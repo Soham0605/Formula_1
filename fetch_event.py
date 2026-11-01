@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,6 +37,26 @@ OPENF1 = "https://api.openf1.org/v1"
 MV = "https://api.multiviewer.app/api/v1/circuits"
 UA = {"User-Agent": "pit-wall-dashboard (research)"}
 
+_TOKEN: dict = {}
+
+def _openf1_token() -> str | None:
+    """Bearer token from OPENF1_USERNAME / OPENF1_PASSWORD (OAuth password flow, 1 h TTL).
+    Returns None if credentials are not set — public endpoints work without auth outside live sessions."""
+    user = os.environ.get("OPENF1_USERNAME")
+    pw   = os.environ.get("OPENF1_PASSWORD")
+    if not (user and pw):
+        return None
+    if _TOKEN.get("until", 0) - time.time() > 60:
+        return _TOKEN["value"]
+    r = requests.post(f"{OPENF1.rstrip('/v1')}/token",
+                      data={"username": user, "password": pw},
+                      headers=UA, timeout=20)
+    r.raise_for_status()
+    d = r.json()
+    _TOKEN["value"] = d["access_token"]
+    _TOKEN["until"] = time.time() + float(d.get("expires_in", 3600))
+    return _TOKEN["value"]
+
 # Event facts that no API returns. Each carries its source.
 EVENT_FACTS = {
     (2026, 18): dict(
@@ -44,14 +65,49 @@ EVENT_FACTS = {
         facts_source="Pirelli allocation: formula1.com 'What tyres will the teams and drivers have for the 2026 "
                      "United States Grand Prix?'; laps/length: COTA official figures",
     ),
+    (2026, 19): dict(
+        slug="mexico_2026", laps=71, lap_km=4.304, tz="America/Mexico_City",
+        compounds=dict(S="C3", M="C2", H="C1"), sets=dict(S=8, M=3, H=2),
+        facts_source="Pirelli allocation: formula1.com 2026 Mexico City GP tyre preview; "
+                     "laps/length: Autódromo Hermanos Rodríguez official figures",
+    ),
+    (2026, 20): dict(
+        slug="brazil_2026", laps=71, lap_km=4.309, tz="America/Sao_Paulo",
+        compounds=dict(S="C4", M="C3", H="C2"), sets=dict(S=8, M=3, H=2),
+        facts_source="Pirelli allocation: formula1.com 2026 Brazil GP tyre preview; "
+                     "laps/length: Interlagos official figures",
+    ),
+    (2026, 21): dict(
+        slug="las_vegas_2026", laps=50, lap_km=6.201, tz="America/Los_Angeles",
+        compounds=dict(S="C5", M="C4", H="C3"), sets=dict(S=8, M=3, H=2),
+        facts_source="Pirelli allocation: formula1.com 2026 Las Vegas GP tyre preview; "
+                     "laps/length: Las Vegas Strip Street Circuit official figures",
+    ),
+    (2026, 22): dict(
+        slug="qatar_2026", laps=57, lap_km=5.419, tz="Asia/Qatar",
+        compounds=dict(S="C4", M="C3", H="C2"), sets=dict(S=8, M=3, H=2),
+        facts_source="Pirelli allocation: formula1.com 2026 Qatar GP tyre preview; "
+                     "laps/length: Lusail International Circuit official figures",
+    ),
+    (2026, 23): dict(
+        slug="abu_dhabi_2026", laps=58, lap_km=5.281, tz="Asia/Dubai",
+        compounds=dict(S="C4", M="C3", H="C2"), sets=dict(S=8, M=3, H=2),
+        facts_source="Pirelli allocation: formula1.com 2026 Abu Dhabi GP tyre preview; "
+                     "laps/length: Yas Marina official figures",
+    ),
 }
 OUR_TEAM = "red_bull"
 
 
 def get(url, params=None, tries=5):
+    headers = dict(UA)
+    if OPENF1.split("/v1")[0] in url:
+        tok = _openf1_token()
+        if tok:
+            headers["Authorization"] = f"Bearer {tok}"
     for k in range(tries):
         try:
-            r = requests.get(url, params=params, headers=UA, timeout=40)
+            r = requests.get(url, params=params, headers=headers, timeout=40)
         except requests.RequestException as e:
             print(f"  network error {e}; retry")
             time.sleep(2 ** k)

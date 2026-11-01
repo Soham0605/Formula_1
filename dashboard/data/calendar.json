@@ -1,6 +1,6 @@
 {
  "season": 2026,
- "generated": "2026-10-25T19:18:05.274107+00:00",
+ "generated": "2026-11-01T22:49:47.904242+00:00",
  "races": [
   {
    "round": 1,
@@ -234,7 +234,7 @@
    "lon": -97.6411,
    "race_utc": "2026-10-25T20:00:00+00:00",
    "sprint": false,
-   "status": "live"
+   "status": "completed"
   },
   {
    "round": 19,
@@ -247,7 +247,7 @@
    "lon": -99.0907,
    "race_utc": "2026-11-01T20:00:00+00:00",
    "sprint": false,
-   "status": "upcoming"
+   "status": "live"
   },
   {
    "round": 20,
@@ -302,5 +302,5 @@
    "status": "upcoming"
   }
  ],
- "live_round": 18
+ "live_round": 19
 }

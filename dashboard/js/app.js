@@ -76,6 +76,14 @@ async function boot() {
     $("#boot-msg").textContent = "Calendar data missing. Run `python fetch_event.py` and reload.";
     return;
   }
+  // Compute status from race_utc so the calendar never gets stale between weekends
+  const _now = Date.now();
+  for (const race of S.cal.races) {
+    const t = new Date(race.race_utc).getTime();
+    race.status = _now > t + 3 * 3600e3 ? "completed"
+      : _now >= t - 4 * 24 * 3600e3 ? "live" : "upcoming";
+  }
+  S.cal.live_round = S.cal.races.find(r => r.status === "live")?.round ?? null;
   $("#season-label").textContent = S.cal.season;
   buildPicker();
   tickClock(); setInterval(tickClock, 1000);
@@ -177,7 +185,7 @@ async function selectRace(r) {
   showLoader("Loading race weekend");
   setProgress(.15, "Event data");
   try {
-    const slug = { 18: "usa_2026" }[r.round] || `round_${r.round}`;
+    const slug = r.slug || `round_${r.round}`;
     const [ev, model] = await Promise.all([
       fetch(`data/event/${slug}.json`, { cache: "no-store" }).then(x => { if (!x.ok) throw new Error("event bundle missing"); return x.json(); }),
       fetch("data/model/finish_model.json", { cache: "no-store" }).then(x => x.ok ? x.json() : null).catch(() => null)]);
